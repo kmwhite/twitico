@@ -1,0 +1,166 @@
+#!/usr/bin/env python 
+# Copyright (c) 2011, Kristofer M White
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+#    1. Redistributions of source code must retain the above copyright notice,
+#       this list of conditions and the following disclaimer.
+# 
+#    2. Redistributions in binary form must reproduce the above copyright
+#       notice, this list of conditions and the following disclaimer in the
+#       documentation and/or other materials provided with the distribution.
+# 
+# THIS SOFTWARE IS PROVIDED BY KRISTOFER M WHITE ''AS IS'' AND ANY EXPRESS OR
+# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+# EVENT SHALL KRISTOFER M WHITE OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+# INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+# THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are
+# those of the authors and should not be interpreted as representing official
+# policies, either expressed or implied, of Kristofer M White.
+
+# Standard Library Imports
+import ConfigParser
+import optparse
+import os
+import sys
+import thread
+import time
+
+# Third-Party Imports
+from trayify import notifications
+import twitter
+import twitter_oauth
+
+class Twitico(object):
+    ''' Main class representing the Twitico icon '''
+
+    def __init__(self):
+        ''' Twitico initializer '''
+
+        # The consumer_* values are used to identify Twitico as Twitico to
+        # the twitter servers.
+        self.consumer_key='V5dE3MyRBD0nQL3sAwvjLA'
+        self.consumer_secret='Y1knhhIQvdGZ2VcwQyT0Fjx1DL3wLyFKADr0xNDg'
+
+        # We need to ensure the config_file exists before we try loading
+        # it. We do not want 
+        config_file = os.path.expanduser('~/.twitico/config')
+        if not os.path.exists(config_file):
+            interface.display_alert_dialog('Config Missing')
+            self.write_config_file(config_file)
+
+        # Read in config and create attr's related
+        self.config = self.read_config_file(config_file)
+        for name, value in self.config['account'].iteritems():
+            setattr(self, name, value)
+
+        # create Api instance
+        self.api = twitter_oauth.Api(self.consumer_key, self.consumer_secret,
+                                     self.oauth_token, self.oauth_token_secret)
+
+        # unless the specific keys are in the config, get_oauth_obj
+        get_oauth_obj = twitter_oauth.GetOauth(self.consumer_key,
+                                               self.consumer_secret)
+
+        self.icon = interface.create_notification_icon()
+        self.tlock = thread.allocate_lock()
+
+        # last_id represents the id of the last rendered tweet. We note this
+        # so that we can prevent ourselves from repeating tweets in the
+        # timeline.
+        self.last_id = 0
+
+    def write_config_file(self, config_file):
+        ''' create the twitico config file and directory '''
+
+        config_dir = os.path.dirname(config_file)
+
+        if not os.path.exists(config_dir):
+            os.mkdir(config_dir, 0700)
+        with open(config_file, 'w') as cfgfile:
+            # create GetOauth instance
+            get_oauth_obj = twitter_oauth.GetOauth(self.consumer_key,
+                                                   self.consumer_secret)
+
+            # get oauth_token and oauth token secret
+            d = get_oauth_obj.get_oauth()
+
+            # generate config
+            config = ConfigParser.ConfigParser()
+            config.add_section('account')
+            config.set('account', 'oauth_token', d['oauth_token'])
+            config.set('account', 'oauth_token_secret',
+                                  d['oauth_token_secret'])
+            config.write(cfgfile)
+            cfgfile.close()
+
+    def read_config_file(self, config_file):
+        ''' read in an existing twitico config file '''
+        config = {}
+        cfg_blob = ConfigParser.ConfigParser()
+        cfg_blob.read(config_file)
+        for section in cfg_blob.sections():
+            config[section] = {}
+            for option in cfg_blob.options(section):
+                config[section][option] = cfg_blob.get(section, option)
+        return config
+
+    def find_updates(self):
+        ''' Find all updates in the users  '''
+        while True:
+            self.tlock.acquire()
+            updates = self.api.get_friends_timeline() #since_id = self.last_id)
+            update_time = time.strftime("%a %Y.%m.%d %T")
+            tooltip = "{0} updates at {1}".format(len(updates), update_time)
+            try:
+                for update in updates:
+                    notifications.normal('Twitico', update.user.screen_name,
+                            update.text)
+                    if self.last_id < update.id:
+                        self.last_id = update.id
+                interface.set_icon_tooltip(self.icon, tooltip)
+
+            except twitter_oauth.TwitterError as (errno, strerror):
+                notifications.critical('Twitico', errno, strerror)
+            self.tlock.release()
+            time.sleep(600)
+
+    def tweet(self, widget, message = "FooBarBaz"):
+        ''' Create a new tweet '''
+        try:
+            status = self.api.PostUpdates(getText(), continuation='...')
+            print "{0} Posting status update: {{1}}".format('info', status)
+        except twitter_oauth.TwitterError as (errno, strerror):
+            notifications.critical('Twitico', errno, strerror)
+
+
+
+if __name__ == '__main__':
+    parser = optparse.OptionParser()
+    parser.add_option("-g", "--gui", dest="gui", default='gtk',
+                      help="use GUI for the interface library")
+    (options, args) = parser.parse_args()
+
+    if options.gui == 'gtk':
+        from trayify import gtk as interface
+    elif options.gui == 'qt':
+        from trayify import qt as interface
+    elif options.gui == 'cocoa':
+        from trayify import cocoa as interface
+    else:
+        print "Invalid UI Library provided!"
+        sys.exit(3)
+
+    interface.initialize()
+    tw = Twitico()
+    t = thread.start_new_thread(tw.find_updates, ())
+    interface.start()
