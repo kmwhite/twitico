@@ -98,8 +98,7 @@ class Twitico(object):
             config = ConfigParser.ConfigParser()
             config.add_section('account')
             config.set('account', 'oauth_token', d['oauth_token'])
-            config.set('account', 'oauth_token_secret',
-                                  d['oauth_token_secret'])
+            config.set('account', 'oauth_token_secret', d['oauth_token_secret'])
             config.write(cfgfile)
             cfgfile.close()
 
@@ -127,8 +126,7 @@ class Twitico(object):
                             update.text)
                     if self.last_id < update.id:
                         self.last_id = update.id
-                interface.set_icon_tooltip(self.icon, tooltip)
-
+                self.icon = interface.set_icon_tooltip(self.icon, tooltip)
             except twitter_oauth.TwitterError as (errno, strerror):
                 notifications.critical('Twitico', errno, strerror)
             self.tlock.release()
@@ -151,11 +149,11 @@ if __name__ == '__main__':
     (options, args) = parser.parse_args()
 
     if options.gui == 'gtk':
-        from trayify import gtk as interface
-    elif options.gui == 'qt':
-        from trayify import qt as interface
+        from trayify import gtk_ui as interface
+    elif options.gui == 'qt3':
+        from trayify import qt3_ui as interface
     elif options.gui == 'cocoa':
-        from trayify import cocoa as interface
+        from trayify import cocoa_ui as interface
     else:
         print "Invalid UI Library provided!"
         sys.exit(3)
