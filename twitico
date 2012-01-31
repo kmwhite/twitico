@@ -98,7 +98,7 @@ class Twitico(object):
         # last_id represents the id of the last rendered tweet. We note this
         # so that we can prevent ourselves from repeating tweets in the
         # timeline.
-        self.last_id = 0
+        self.last_id = None
 
     def create_right_click_menu(self, icon, button, time):
         ''' create the twitico menu '''
@@ -201,7 +201,7 @@ class Twitico(object):
         ''' Find all updates in the users  '''
         while True:
             self.tlock.acquire()
-            updates = self.api.get_friends_timeline() #since_id = self.last_id)
+            updates = self.api.get_friends_timeline(None, self.last_id)
             update_time = time.strftime("%a %Y.%m.%d %T")
             tooltip = "{0} updates at {1}".format(len(updates), update_time)
             try:
