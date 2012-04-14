@@ -35,25 +35,8 @@ import thread
 import time
 
 # Third-Party Imports
-try:
-    import pygtk
-    pygtk.require("2.0")
-except ImportError:
-    print 'Import Failure: PyGTK Not Available'
-    sys.exit(1)
-except:
-    pass
-
-try:
-    import gtk
-    import gtk.glade
-    import gobject
-except:
-    print 'Import Failure: GTK Not Availible'
-    print 'Ensure gtk, gtk.glade, and gobject are available'
-    sys.exit(2)
-
 import pynotify
+import trayify
 import twitter
 import twitter_oauth
 
@@ -68,11 +51,14 @@ class Twitico(object):
         self.consumer_key='V5dE3MyRBD0nQL3sAwvjLA'
         self.consumer_secret='Y1knhhIQvdGZ2VcwQyT0Fjx1DL3wLyFKADr0xNDg'
 
+        # Initialize our tray icon
+        self.tray_icon = trayify.initialize('gtk')
+
         # We need to ensure the config_file exists before we try loading
         # it. We do not want 
         config_file = os.path.expanduser('~/.twitico/config')
         if not os.path.exists(config_file):
-            self.display_alert_dialog('Config Missing')
+            self.tray_icon.show_message('Config Missing', 'warn')
             self.write_config_file(config_file)
 
         # Read in config and create attr's related
@@ -88,33 +74,14 @@ class Twitico(object):
         get_oauth_obj = twitter_oauth.GetOauth(self.consumer_key,
                                                self.consumer_secret)
 
-        self.icon = gtk.StatusIcon()
-        self.icon.set_from_stock(gtk.STOCK_ABOUT)
-        self.icon.set_visible(True)
-        self.icon.connect("popup-menu", self.create_right_click_menu)
-        self.icon.set_tooltip('Initializing... ')
+        self.tray_icon.create_icon()
+        self.tray_icon.add_menu({'Compose': self.tweet})
         self.tlock = thread.allocate_lock()
 
         # last_id represents the id of the last rendered tweet. We note this
         # so that we can prevent ourselves from repeating tweets in the
         # timeline.
         self.last_id = None
-
-    def create_right_click_menu(self, icon, button, time):
-        ''' create the twitico menu '''
-        menu = gtk.Menu()
-
-        compose = gtk.MenuItem("Compose")
-        compose.connect("activate", self.tweet)
-        menu.append(compose)
-
-        quit = gtk.MenuItem("Quit")
-        quit.connect("activate", gtk.main_quit)
-        menu.append(quit)
-
-        menu.show_all()
-
-        menu.popup(None, None, gtk.status_icon_position_menu, button, time, icon)
 
     def write_config_file(self, config_file):
         ''' create the twitico config file and directory '''
@@ -150,53 +117,6 @@ class Twitico(object):
                 config[section][option] = cfg_blob.get(section, option)
         return config
 
-    def extract_response(self, entry, dialog, response):
-        dialog.response(response)
-
-    def get_text_input(self, mask_input = False):
-        # http://ardoris.wordpress.com/2008/07/05/pygtk-text-entry-dialog/
-        #base this on a message dialog
-        dialog = gtk.MessageDialog( None,
-                     gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT,
-                     gtk.MESSAGE_QUESTION,
-                     gtk.BUTTONS_OK,
-                     None)
-        dialog.set_markup("What's Happening...")
-        #create the text input field
-        entry = gtk.Entry()
-        if mask_input:
-            entry.set_visibility(False)
-        #allow the user to press enter to do ok
-        entry.connect("activate", self.extract_response, dialog, gtk.RESPONSE_OK)
-        #create a horizontal box to pack the entry and a label
-        hbox = gtk.HBox()
-        hbox.pack_start(gtk.Label("Name:"), False, 5, 5)
-        hbox.pack_end(entry)
-        #some secondary text
-        #dialog.format_secondary_markup("This will be used for <i>identification</i> purposes")
-        #add it and show it
-        dialog.vbox.pack_end(hbox, True, True, 0)
-        dialog.show_all()
-        #go go go
-        dialog.run()
-        text = entry.get_text()
-        dialog.destroy()
-        return text
-
-    def display_alert_dialog(self, message, message_type = 'info'):
-        ''' display alert dialog '''
-        dialogs = {
-                'info': gtk.MESSAGE_INFO,
-                'error': gtk.MESSAGE_ERROR,
-                'question': gtk.MESSAGE_QUESTION,
-                'warn': gtk.MESSAGE_WARNING
-                }
-        md = gtk.MessageDialog(None, gtk.DIALOG_DESTROY_WITH_PARENT,
-                               dialogs[message_type], gtk.BUTTONS_CLOSE,
-                               message)
-        md.run()
-        md.destroy()
-
     def find_updates(self):
         ''' Find all updates in the users  '''
         while True:
@@ -209,7 +129,7 @@ class Twitico(object):
                     self.notify(update.user.screen_name, update.text)
                     if self.last_id < update.id:
                         self.last_id = update.id
-                self.icon.set_tooltip(tooltip)
+                self.tray_icon.set_tooltip(tooltip)
             except twitter_oauth.TwitterError as (errno, strerror):
                 self.critical(errno, strerror)
             self.tlock.release()
@@ -218,7 +138,8 @@ class Twitico(object):
     def tweet(self, widget, message = "FooBarBaz"):
         ''' Create a new tweet '''
         try:
-            status = self.api.post_update(self.get_text_input())
+            status = self.api.post_update(
+                            self.tray_icon.get_message('What\'s happening...'))
             print "{0} Posting status update: {1}".format('info', status)
         except twitter_oauth.TwitterError as (errno, strerror):
             self.notify(errno, strerror, None, pynotify.URGENCY_CRITICAL)
@@ -241,9 +162,6 @@ class Twitico(object):
 
 
 if __name__ == '__main__':
-
-    gobject.threads_init()
-    gtk.gdk.threads_init()
     tw = Twitico()
     t = thread.start_new_thread(tw.find_updates, ())
-    gtk.main()
+    tw.tray_icon.start()
