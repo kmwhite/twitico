@@ -2,7 +2,7 @@
 
 ## Description ##
 
-Trayify is a library to provide a simple api to create basic systemtray icon applications.
+Twitico is a simple, minimalist Python twitter client. It supports notifications via PyNotify.
 
 ## Installation ##
 
@@ -22,6 +22,7 @@ Just copy the executable to a location that will be seen by the $PATH variable. 
 ## Usage ##
 
 After installation, simply execute the command:
+
     % twitico
 
 * NOTE: For the first run of the command, you'll want to execute it from a terminal
